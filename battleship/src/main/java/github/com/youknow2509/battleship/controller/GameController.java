@@ -29,6 +29,7 @@ import javafx.stage.Screen;
 import javafx.stage.Stage;
 
 import java.io.IOException;
+import java.lang.reflect.Type;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -49,6 +50,7 @@ public class GameController {
     private ImageView battleship_bot, aircraft_carrier_bot, cruiser_bot, submarine_bot, destroyer_bot;
     @FXML
     private TextField imv_turn;
+    private final Gson gson = new Gson();
 
     private final Board playerBoard, botBoard;
     private int playerTurns = 0; // 0 = player, 1 = bot
@@ -67,6 +69,90 @@ public class GameController {
         setupShipMappings();
         renderGrid(botGrid, botBoard);
         setupPlayerClickEvents();
+    }
+
+    // Gọi API /fire
+    public void fire(int x, int y) {
+        HttpClient.fire(x, y, new HttpClient.HttpResponseCallback() {
+            @Override
+            public void onSuccess(String response) {
+                Platform.runLater(() -> handleFireResponse(response));
+            }
+
+            @Override
+            public void onFailure(IOException e) {
+                System.out.println("Error firing at (" + x + ", " + y + "): " + e.getMessage());
+            }
+        });
+    }
+
+    // Xử lý phản hồi từ API /fire
+    private void handleFireResponse(String response) {
+        Map<String, Object> result = gson.fromJson(response, Map.class);
+        boolean hit = (boolean) result.get("hit");
+        System.out.println("Fire result: " + (hit ? "Hit!" : "Miss!"));
+    }
+
+    // Gọi API /ai-move
+    public void aiMove() {
+        HttpClient.aiMove(new HttpClient.HttpResponseCallback() {
+            @Override
+            public void onSuccess(String response) {
+                Platform.runLater(() -> handleAiMoveResponse(response));
+            }
+
+            @Override
+            public void onFailure(IOException e) {
+                System.out.println("Error during AI move: " + e.getMessage());
+            }
+        });
+    }
+
+    // Xử lý phản hồi từ API /ai-move
+    private void handleAiMoveResponse(String response) {
+        Type type = new TypeToken<Map<String, Object>>() {}.getType();
+        Map<String, Object> result = gson.fromJson(response, type);
+
+        int x = ((Double) result.get("x")).intValue();
+        int y = ((Double) result.get("y")).intValue();
+        boolean hit = (boolean) result.get("hit");
+
+        System.out.println("AI move at (" + x + ", " + y + "): " + (hit ? "Hit!" : "Miss!"));
+    }
+
+    // Gọi API /board
+    public void getBoard() {
+        HttpClient.getBoard(new HttpClient.HttpResponseCallback() {
+            @Override
+            public void onSuccess(String response) {
+                Platform.runLater(() -> handleGetBoardResponse(response));
+            }
+
+            @Override
+            public void onFailure(IOException e) {
+                System.out.println("Error fetching board: " + e.getMessage());
+            }
+        });
+    }
+
+    // Xử lý phản hồi từ API /board
+    private void handleGetBoardResponse(String response) {
+        System.out.println("Board data: " + response);
+    }
+
+    // Gọi API /reset
+    public void resetGame() {
+        HttpClient.reset(new HttpClient.HttpResponseCallback() {
+            @Override
+            public void onSuccess(String response) {
+                Platform.runLater(() -> System.out.println("Game reset successful!"));
+            }
+
+            @Override
+            public void onFailure(IOException e) {
+                System.out.println("Error resetting game: " + e.getMessage());
+            }
+        });
     }
 
     // handle click menu button - handle popup menu
@@ -176,62 +262,52 @@ public class GameController {
         }
     }
 
-    // handle bot choose cell to hit
     private void botTurn() {
-        int[][] placeShip = utils.getGridPaneReq(playerBoard);
-        List<Integer> getListShipNotSunk = utils.getListShipNotSunk(playerBoard);
+        // Tạo một luồng riêng để xử lý logic của bot
         new Thread(() -> {
             try {
+                // Tạm dừng để tạo hiệu ứng thời gian cho bot
                 Thread.sleep(1000);
             } catch (InterruptedException e) {
                 e.printStackTrace();
             }
-            // get data from board
-            // debug show
-            showDataReq(placeShip, getListShipNotSunk);
 
-            // Call api post
-            HttpClient.SendDataToServer(placeShip, getListShipNotSunk, new HttpClient.HttpResponseCallback() {
+            // Gọi API /ai-move để lấy tọa độ mà bot sẽ tấn công
+            HttpClient.aiMove(new HttpClient.HttpResponseCallback() {
                 @Override
                 public void onSuccess(String response) {
+                    // Phân tích phản hồi từ server
                     Gson gson = new Gson();
-                    List<Integer> list = gson.fromJson(response, new TypeToken<List<Integer>>(){}.getType());
-                    // Handle success (response received from server)
-                    Cell cell;
-                    do {
-                        int row = list.get(0);
-                        int col = list.get(1);
-                        cell = botBoard.getCell(row, col);
-                    } while (cell.isHit());
+                    Map<String, Object> result = gson.fromJson(response, new TypeToken<Map<String, Object>>() {}.getType());
 
-                    Cell finalCell = cell;
+                    int row = ((Double) result.get("x")).intValue();
+                    int col = ((Double) result.get("y")).intValue();
+                    boolean hit = (boolean) result.get("hit");
+
+                    // Xử lý kết quả từ lượt tấn công của bot
+                    Cell cell = botBoard.getCell(row, col);
                     Platform.runLater(() -> {
-                        if (finalCell.isHasShip()) {
-                            handleShipHit(botGrid, finalCell, 1);
-                            botTurn();
+                        if (hit) {
+                            handleShipHit(botGrid, cell, 1); // Xử lý khi trúng tàu
+                            botTurn(); // Bot tiếp tục lượt nếu trúng tàu
                         } else {
-                            handleMiss(botGrid, finalCell);
-                            playerTurns = 0;
+                            handleMiss(botGrid, cell); // Xử lý khi không trúng tàu
+                            playerTurns = 0; // Chuyển lượt cho người chơi
+                            imv_turn.setText("YOUR TURN");
                         }
                     });
-
-                    System.out.println("Server Response: " + response);
                 }
 
                 @Override
                 public void onFailure(IOException e) {
-                    // Handle failure (e.g., network error, etc.)
-                    System.out.println("Server Error: " + e.getMessage());
-                    BotRandomMode();
-//                    e.printStackTrace();
+                    System.out.println("Lỗi khi gọi API /ai-move: " + e.getMessage());
+                    BotRandomMode(); // Chuyển sang chế độ random nếu không kết nối được với server
                 }
             });
-
-
-
-
         }).start();
     }
+
+
 
     //Mode random if disconnect server
     private void BotRandomMode(){
@@ -296,7 +372,7 @@ public class GameController {
     private void renderGrid(GridPane grid, Board board) {
         board.getCells().stream().filter(Cell::isHasShip).forEach(cell -> {
             StackPane pane = getStackPane(grid, cell.getPosition().getX(), cell.getPosition().getY());
-            if (  != null)
+            if ( pane != null)
                 pane.getChildren().add(new Rectangle(Consts.SIZE_CELL, Consts.SIZE_CELL, Color.RED));
         });
     }

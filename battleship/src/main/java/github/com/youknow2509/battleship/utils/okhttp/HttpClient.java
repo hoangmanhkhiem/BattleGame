@@ -4,58 +4,116 @@ import com.google.gson.Gson;
 import okhttp3.*;
 
 import java.io.IOException;
-import java.util.List;
-
 
 public class HttpClient {
+    private static final String BASE_URL = "http://127.0.0.1:5000";
+    private static final OkHttpClient client = new OkHttpClient();
+    private static final Gson gson = new Gson();
+
     public interface HttpResponseCallback {
         void onSuccess(String response);
         void onFailure(IOException e);
     }
 
-    public static void SendDataToServer(int[][] placeShip, List<Integer> getListShipNotSunk, HttpResponseCallback callback) {
-        OkHttpClient client = new OkHttpClient();
-        Gson gson = new Gson();
-        String jsonData = gson.toJson(placeShip);
-        String jsonData2 = gson.toJson(getListShipNotSunk);
-        System.out.println(jsonData);
-        System.out.println(jsonData2);
-        // Tao body request
-        String json = "{\"placeShip\":" + jsonData + ",\"getListShipNotSunk\":" + jsonData2 + "}";
-        RequestBody body = RequestBody.create(json, MediaType.get("application/json; charset=utf-8"));
+    // Gửi yêu cầu POST tới /fire
+    public static void fire(int x, int y, HttpResponseCallback callback) {
+        String url = BASE_URL + "/fire";
+        String json = gson.toJson(new FireRequest(x, y));
 
-        Request request = new Request.Builder()
-                .url("http://127.0.0.1:5000/ai-battleship")
-                .post(body)
-                .build();
+        RequestBody body = RequestBody.create(json, MediaType.get("application/json; charset=utf-8"));
+        Request request = new Request.Builder().url(url).post(body).build();
 
         client.newCall(request).enqueue(new Callback() {
             @Override
-            public void onFailure(okhttp3.Call call, IOException e) {
-                // Pass the failure to the callback
+            public void onFailure(Call call, IOException e) {
                 callback.onFailure(e);
             }
 
             @Override
-            public void onResponse(okhttp3.Call call, Response response) throws IOException {
+            public void onResponse(Call call, Response response) throws IOException {
                 if (response.isSuccessful()) {
-                    // Pass the response to the callback
                     callback.onSuccess(response.body().string());
                 } else {
-                    // Handle unsuccessful response
                     callback.onFailure(new IOException("Request failed with code: " + response.code()));
                 }
             }
         });
     }
 
-    public static class ShipData {
-        int[][] placeShip;
-        List<Integer> getListShipNotSunk;
+    // Gửi yêu cầu POST tới /ai-move
+    public static void aiMove(HttpResponseCallback callback) {
+        String url = BASE_URL + "/ai-move";
 
-        public ShipData(int[][] placeShip, List<Integer> getListShipNotSunk) {
-            this.placeShip = placeShip;
-            this.getListShipNotSunk = getListShipNotSunk;
+        Request request = new Request.Builder().url(url).post(RequestBody.create("", null)).build();
+        client.newCall(request).enqueue(new Callback() {
+            @Override
+            public void onFailure(Call call, IOException e) {
+                callback.onFailure(e);
+            }
+
+            @Override
+            public void onResponse(Call call, Response response) throws IOException {
+                if (response.isSuccessful()) {
+                    callback.onSuccess(response.body().string());
+                } else {
+                    callback.onFailure(new IOException("Request failed with code: " + response.code()));
+                }
+            }
+        });
+    }
+
+    // Gửi yêu cầu GET tới /board
+    public static void getBoard(HttpResponseCallback callback) {
+        String url = BASE_URL + "/board";
+
+        Request request = new Request.Builder().url(url).get().build();
+        client.newCall(request).enqueue(new Callback() {
+            @Override
+            public void onFailure(Call call, IOException e) {
+                callback.onFailure(e);
+            }
+
+            @Override
+            public void onResponse(Call call, Response response) throws IOException {
+                if (response.isSuccessful()) {
+                    callback.onSuccess(response.body().string());
+                } else {
+                    callback.onFailure(new IOException("Request failed with code: " + response.code()));
+                }
+            }
+        });
+    }
+
+    // Gửi yêu cầu POST tới /reset
+    public static void reset(HttpResponseCallback callback) {
+        String url = BASE_URL + "/reset";
+
+        Request request = new Request.Builder().url(url).post(RequestBody.create("", null)).build();
+        client.newCall(request).enqueue(new Callback() {
+            @Override
+            public void onFailure(Call call, IOException e) {
+                callback.onFailure(e);
+            }
+
+            @Override
+            public void onResponse(Call call, Response response) throws IOException {
+                if (response.isSuccessful()) {
+                    callback.onSuccess(response.body().string());
+                } else {
+                    callback.onFailure(new IOException("Request failed with code: " + response.code()));
+                }
+            }
+        });
+    }
+
+    // Class đại diện cho dữ liệu gửi trong yêu cầu /fire
+    private static class FireRequest {
+        int x;
+        int y;
+
+        FireRequest(int x, int y) {
+            this.x = x;
+            this.y = y;
         }
     }
 }
